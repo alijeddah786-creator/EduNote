@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduNote | Academic Study Assistant</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Marked.js for rendering markdown in chat -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- PDF.js for extracting text and rendering PDFs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#2563eb', // blue-600
+                        primaryHover: '#1d4ed8', // blue-700
+                        surface: '#f8fafc', // slate-50
+                        surfaceDark: '#f1f5f9', // slate-100
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar for a cleaner look */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .prose pre { background-color: #f1f5f9; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        .prose code { font-family: monospace; font-size: 0.875em; background-color: #f1f5f9; padding: 0.125rem 0.25rem; border-radius: 0.25rem; }
+        .prose p { margin-bottom: 0.75rem; }
+        .prose p:last-child { margin-bottom: 0; }
+        .prose ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+        .prose ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+        .prose h1, .prose h2, .prose h3 { font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; }
+        
+        /* Loader */
+        .typing-indicator span {
+            display: inline-block;
+            width: 5px;
+            height: 5px;
+            background-color: #94a3b8;
+            border-radius: 50%;
+            margin: 0 2px;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        /* 3D Card Flip styles */
+        .flashcard-perspective {
+            perspective: 1000px;
+        }
+        .flashcard-inner {
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+        .flashcard-flipped {
+            transform: rotateY(180deg);
+        }
+        .flashcard-front, .flashcard-back {
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+        }
+        .flashcard-back {
+            transform: rotateY(180deg);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col bg-surface text-slate-800 font-sans overflow-hidden">
+
+    <!-- Navbar -->
+    <header class="h-16 flex items-center justify-between px-6 bg-white border-b border-slate-200 shadow-sm z-30 shrink-0">
+        <div class="flex items-center gap-2 text-primary">
+            <i data-lucide="graduation-cap" class="w-8 h-8"></i>
+            <h1 class="text-2xl font-bold tracking-tight text-slate-900">EduNote</h1>
+            <span class="ml-2 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">Workspace</span>
+        </div>
+        
+        <!-- Live API Key validation box -->
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all shadow-inner">
+                <i data-lucide="key" class="w-4 h-4 text-slate-400"></i>
+                <input 
+                    type="password" 
+                    id="api-key-input" 
+                    placeholder="Enter Gemini API Key..." 
+                    class="bg-transparent border-none outline-none text-sm w-56 text-slate-700 placeholder-slate-400 font-mono"
+                >
+            </div>
+            <div class="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 text-sm font-medium">
+                <span id="connection-status-dot" class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                <span id="connection-status-text" class="text-rose-600 font-semibold">Not Connected</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Layout -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Sidebar: Documents & Actions -->
+        <aside class="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-y-auto">
+            <!-- Upload area -->
+            <div class="p-4 border-b border-slate-100">
+                <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Study Materials</h2>
+                <label class="flex items-center justify-center gap-2 w-full bg-blue-50 hover:bg-blue-100 text-primary transition-all py-3 rounded-xl cursor-pointer border border-blue-200 font-semibold text-sm shadow-sm">
+                    <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+                    Upload Document
+                    <input type="file" id="file-upload" class="hidden" accept=".pdf,.txt,.md">
+                </label>
+                <p class="text-xs text-slate-400 mt-2 text-center">Supports readable PDF, TXT, MD</p>
+            </div>
+
+            <!-- Documents List -->
+            <div class="p-4 border-b border-slate-100 max-h-56 overflow-y-auto flex-1" id="document-container">
+                <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">My Library</h3>
+                <div id="document-list" class="space-y-1">
+                    <div class="text-xs text-slate-400 text-center py-4" id="empty-docs-msg">
+                        <i data-lucide="file-text" class="w-6 h-6 mx-auto mb-1 opacity-40"></i>
+                        No notes uploaded
+                    </div>
+                </div>
+            </div>
+
+            <!-- New Study Toolkit Section -->
+            <div class="p-4 bg-slate-50/50 border-t border-slate-100 shrink-0">
+                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5 text-primary"></i>
+                    Study Toolkit
+                </h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="triggerStudyAction('Summarize Notes')" class="study-btn p-2.5 bg-white border border-slate-200 rounded-lg hover:border-primary hover:text-primary text-slate-700 transition-all text-xs font-medium flex flex-col items-center gap-1.5 text-center shadow-sm">
+                        <i data-lucide="file-text" class="w-4 h-4 text-emerald-500"></i>
+                        Summarize
+                    </button>
+                    <button onclick="triggerStudyAction('Key Concepts')" class="study-btn p-2.5 bg-white border border-slate-200 rounded-lg hover:border-primary hover:text-primary text-slate-700 transition-all text-xs font-medium flex flex-col items-center gap-1.5 text-center shadow-sm">
+                        <i data-lucide="lightbulb" class="w-4 h-4 text-amber-500"></i>
+                        Key Concepts
+                    </button>
+                    <button onclick="triggerStudyAction('Explain Simply')" class="study-btn p-2.5 bg-white border border-slate-200 rounded-lg hover:border-primary hover:text-primary text-slate-700 transition-all text-xs font-medium flex flex-col items-center gap-1.5 text-center shadow-sm">
+                        <i data-lucide="smile" class="w-4 h-4 text-blue-500"></i>
+                        Explain Simply
+                    </button>
+                    <button onclick="triggerStudyAction('Practice Questions')" class="study-btn p-2.5 bg-white border border-slate-200 rounded-lg hover:border-primary hover:text-primary text-slate-700 transition-all text-xs font-medium flex flex-col items-center gap-1.5 text-center shadow-sm">
+                        <i data-lucide="help-circle" class="w-4 h-4 text-purple-500"></i>
+                        Practice Qs
+                    </button>
+                    <button onclick="triggerStudyAction('Study Plan')" class="study-btn p-2.5 bg-white border border-slate-200 rounded-lg hover:border-primary hover:text-primary text-slate-700 transition-all text-xs font-medium flex flex-col items-center gap-1.5 text-center shadow-sm col-span-2">
+                        <i data-lucide="calendar" class="w-4 h-4 text-indigo-500"></i>
+                        Create Weekly Study Plan
+                    </button>
+                    <button onclick="triggerQuizAction()" class="study-btn p-2.5 bg-white border border-slate-200 rounded-lg hover:border-primary hover:text-primary text-slate-700 transition-all text-xs font-medium flex flex-col items-center gap-1.5 text-center shadow-sm">
+                        <i data-lucide="clipboard-list" class="w-4 h-4 text-rose-500"></i>
+                        Create Quiz
+                    </button>
+                    <button onclick="triggerFlashcardAction()" class="study-btn p-2.5 bg-white border border-slate-200 rounded-lg hover:border-primary hover:text-primary text-slate-700 transition-all text-xs font-medium flex flex-col items-center gap-1.5 text-center shadow-sm">
+                        <i data-lucide="layers" class="w-4 h-4 text-violet-500"></i>
+                        Flashcards
+                    </button>
+                    <button onclick="triggerMindMapAction()" class="study-btn p-2.5 bg-white border border-slate-200 rounded-lg hover:border-primary hover:text-primary text-slate-700 transition-all text-xs font-medium flex flex-col items-center gap-1.5 text-center shadow-sm col-span-2">
+                        <i data-lucide="git-branch" class="w-4 h-4 text-cyan-500"></i>
+                        Generate Mind Map
+                    </button>
+                    <button onclick="triggerStudyAction('Exam Preparation Tips')" class="study-btn p-2.5 bg-white border border-slate-200 rounded-lg hover:border-primary hover:text-primary text-slate-700 transition-all text-xs font-medium flex flex-col items-center gap-1.5 text-center shadow-sm col-span-2">
+                        <i data-lucide="award" class="w-4 h-4 text-orange-500"></i>
+                        Exam Preparation Tips
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Center: Interactive Workspace (Document, Mind Map, or Flashcards) -->
+        <section class="flex-1 bg-surfaceDark flex flex-col relative overflow-hidden">
+            
+            <!-- Dynamic Content Area -->
+            <div id="workspace-container" class="w-full h-full relative">
+                
+                <!-- PLACEHOLDER VIEW -->
+                <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-8" id="viewer-placeholder">
+                    <div class="w-20 h-20 rounded-2xl bg-white flex items-center justify-center shadow-md border border-slate-100 mb-6">
+                        <i data-lucide="book-open" class="w-10 h-10 text-primary"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-700 mb-2">Welcome to EduNote Workspace</h3>
+                    <p class="text-sm text-slate-500 text-center max-w-sm leading-relaxed">Select or upload standard lecture files, PDFs or textbooks to instantly study, create interactive flashcards, or draw auto-generated mind maps.</p>
+                </div>
+
+                <!-- DOCUMENT VIEWER VIEW -->
+                <div id="document-viewer" class="absolute inset-0 flex flex-col hidden bg-white">
+                    <div class="shrink-0 h-14 bg-white border-b border-slate-200 flex items-center px-6 justify-between shadow-sm z-10">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="file-text" class="w-5 h-5 text-primary"></i>
+                            <span class="font-semibold text-slate-800" id="viewer-title">Document Viewer</span>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-hidden relative">
+                        <!-- Custom rendered PDF container replaces the native iframe viewer -->
+                        <div id="pdf-viewer-canvas-container" class="w-full h-full overflow-y-auto p-6 bg-slate-100 flex flex-col items-center gap-6 hidden"></div>
+                        <div id="text-viewer" class="w-full h-full overflow-y-auto p-12 bg-white hidden prose max-w-none"></div>
+                    </div>
+                </div>
+
+                <!-- INTERACTIVE MIND MAP VIEW -->
+                <div id="mindmap-viewer" class="absolute inset-0 flex flex-col hidden bg-slate-900 text-white">
+                    <div class="shrink-0 h-14 bg-slate-800 border-b border-slate-700 flex items-center px-6 justify-between z-10">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="git-branch" class="w-5 h-5 text-cyan-400"></i>
+                            <span class="font-semibold text-slate-100">Interactive Mind Map</span>
+                        </div>
+                        <button onclick="returnToDocumentView()" class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-semibold text-slate-100 transition-colors">
+                            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                            Back to Document
+                        </button>
+                    </div>
+                    <div class="flex-1 overflow-auto relative p-8 flex items-center justify-center bg-radial-gradient" id="mindmap-canvas-container">
+                        <!-- Simulated Interactive Map Tree -->
+                        <div id="mindmap-tree" class="flex flex-col items-center gap-12 w-full max-w-4xl">
+                            <!-- Populated dynamically -->
+                            <div class="text-center text-slate-400">Generating structured tree...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- INTERACTIVE FLASHCARD VIEW -->
+                <div id="flashcards-viewer" class="absolute inset-0 flex flex-col hidden bg-slate-50">
+                    <div class="shrink-0 h-14 bg-white border-b border-slate-200 flex items-center px-6 justify-between shadow-sm z-10">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="layers" class="w-5 h-5 text-violet-600"></i>
+                            <span class="font-semibold text-slate-800">Study Flashcards</span>
+                        </div>
+                        <button onclick="returnToDocumentView()" class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 rounded-lg text-xs font-semibold text-slate-700 transition-colors">
+                            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                            Back to Document
+                        </button>
+                    </div>
+                    
+                    <div class="flex-1 flex flex-col items-center justify-center p-8">
+                        <div id="flashcard-deck" class="w-full max-w-lg h-80 flashcard-perspective relative cursor-pointer">
+                            <div id="flashcard-card" class="w-full h-full flashcard-inner relative rounded-2xl shadow-xl border border-slate-200">
+                                <!-- Front -->
+                                <div class="flashcard-front absolute inset-0 bg-white rounded-2xl p-8 flex flex-col items-center justify-center text-center">
+                                    <span class="text-xs font-bold text-violet-500 uppercase tracking-widest mb-4">Question</span>
+                                    <p id="card-question-text" class="text-lg font-semibold text-slate-800">What is the capital of France?</p>
+                                    <span class="text-xs text-slate-400 mt-8 flex items-center gap-1"><i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i> Click to Flip</span>
+                                </div>
+                                <!-- Back -->
+                                <div class="flashcard-back absolute inset-0 bg-violet-600 text-white rounded-2xl p-8 flex flex-col items-center justify-center text-center">
+                                    <span class="text-xs font-bold text-violet-200 uppercase tracking-widest mb-4">Correct Answer</span>
+                                    <p id="card-answer-text" class="text-lg font-medium">Paris</p>
+                                    <span class="text-xs text-violet-200 mt-8 flex items-center gap-1"><i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i> Click to Reveal Question</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card Controls -->
+                        <div class="mt-8 flex items-center gap-6">
+                            <button id="prev-card-btn" class="w-12 h-12 rounded-full bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-600 transition-colors shadow-sm disabled:opacity-40">
+                                <i data-lucide="chevron-left" class="w-6 h-6"></i>
+                            </button>
+                            <span class="text-sm font-semibold text-slate-600" id="card-progress">1 / 5</span>
+                            <button id="next-card-btn" class="w-12 h-12 rounded-full bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-600 transition-colors shadow-sm disabled:opacity-40">
+                                <i data-lucide="chevron-right" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Right Sidebar: Academic Tutor Chat -->
+        <aside class="w-96 bg-white border-l border-slate-200 flex flex-col shrink-0 shadow-[-4px_0_15px_-3px_rgba(0,0,0,0.05)] z-20">
+            <!-- Chat Header -->
+            <div class="p-4 border-b border-slate-100 flex items-center gap-3 bg-blue-50/50 shrink-0">
+                <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white shadow-md">
+                    <i data-lucide="bot" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h2 class="font-bold text-slate-800 text-sm">Academic Tutor</h2>
+                    <p class="text-xs text-slate-500">Ready to cite pages & sections</p>
+                </div>
+            </div>
+            
+            <!-- Message List -->
+            <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-slate-50/30" id="chat-messages">
+                <!-- Welcome Message -->
+                <div class="flex gap-3">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-1">
+                        <i data-lucide="bot" class="w-4 h-4 text-primary"></i>
+                    </div>
+                    <div class="bg-white border border-slate-200 p-3.5 rounded-2xl rounded-tl-none shadow-sm text-sm text-slate-700 prose">
+                        <p>Hello! I'm your friendly <strong>Academic Tutor & Study Assistant</strong>. 😊</p>
+                        <p>Upload files on the left (lecture notes, textbooks, study guidelines), and I can:</p>
+                        <ul>
+                            <li>Break down complex material simply.</li>
+                            <li>Formulate a personal weekly study plan.</li>
+                            <li>Cite explicit pages and sections to help you verify facts.</li>
+                        </ul>
+                        <p>Which topic or document would you like to target first?</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Chat Input form -->
+            <div class="p-4 bg-white border-t border-slate-200 shrink-0">
+                <form id="chat-form" class="relative">
+                    <textarea 
+                        id="chat-input" 
+                        rows="1"
+                        placeholder="Ask a question about your notes..." 
+                        class="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-4 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none transition-all"
+                        style="min-height: 46px; max-height: 150px;"
+                    ></textarea>
+                    <button type="submit" class="absolute right-2 bottom-2 w-8 h-8 flex items-center justify-center rounded-lg bg-primary text-white hover:bg-primaryHover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow" id="send-btn">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                    </button>
+                </form>
+            </div>
+        </aside>
+
+    </main>
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        // Initialize PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // State Management
+        let apiKey = "";
+        let documents = []; // { id, name, file, blobUrl, extractedText, type }
+        let activeDocumentId = null;
+        let chatHistory = [];
+        let currentView = 'placeholder'; // 'placeholder', 'document', 'mindmap', 'flashcards'
+        
+        // Active Flashcard Deck State
+        let currentFlashcards = [];
+        let currentCardIndex = 0;
+
+        // DOM Elements
+        const apiKeyInput = document.getElementById('api-key-input');
+        const statusDot = document.getElementById('connection-status-dot');
+        const statusText = document.getElementById('connection-status-text');
+        
+        const fileUpload = document.getElementById('file-upload');
+        const documentList = document.getElementById('document-list');
+        const emptyDocsMsg = document.getElementById('empty-docs-msg');
+        
+        const viewerPlaceholder = document.getElementById('viewer-placeholder');
+        const documentViewer = document.getElementById('document-viewer');
+        const mindMapViewer = document.getElementById('mindmap-viewer');
+        const flashcardsViewer = document.getElementById('flashcards-viewer');
+        
+        const viewerTitle = document.getElementById('viewer-title');
+        const pdfViewerContainer = document.getElementById('pdf-viewer-canvas-container');
+        const textViewer = document.getElementById('text-viewer');
+        
+        const chatMessages = document.getElementById('chat-messages');
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        // Dynamic Textarea Sizing
+        chatInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                chatForm.dispatchEvent(new Event('submit'));
+            }
+        });
+
+        // Flashcard Elements
+        const flashcardCard = document.getElementById('flashcard-card');
+        const cardQuestionText = document.getElementById('card-question-text');
+        const cardAnswerText = document.getElementById('card-answer-text');
+        const prevCardBtn = document.getElementById('prev-card-btn');
+        const nextCardBtn = document.getElementById('next-card-btn');
+        const cardProgress = document.getElementById('card-progress');
+
+        // Flashcard Interactions
+        flashcardCard.addEventListener('click', () => {
+            flashcardCard.classList.toggle('flashcard-flipped');
+        });
+
+        prevCardBtn.addEventListener('click', () => {
+            if (currentCardIndex > 0) {
+                currentCardIndex--;
+                showCard(currentCardIndex);
+            }
+        });
+
+        nextCardBtn.addEventListener('click', () => {
+            if (currentCardIndex < currentFlashcards.length - 1) {
+                currentCardIndex++;
+                showCard(currentCardIndex);
+            }
+        });
+
+        // API Key Handling
+        apiKeyInput.addEventListener('input', (e) => {
+            apiKey = e.target.value.trim();
+            if (apiKey.length > 10) {
+                statusDot.classList.remove('bg-rose-500');
+                statusDot.classList.add('bg-emerald-500');
+                statusText.textContent = "Connected";
+                statusText.classList.remove('text-rose-600');
+                statusText.classList.add('text-emerald-700');
+            } else {
+                statusDot.classList.remove('bg-emerald-500');
+                statusDot.classList.add('bg-rose-500');
+                statusText.textContent = "Not Connected";
+                statusText.classList.remove('text-emerald-700');
+                statusText.classList.add('text-rose-600');
+            }
+        });
+
+        // Document Upload Handling
+        fileUpload.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (files.length === 0) return;
+
+            for (const file of files) {
+                const id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                const docObj = {
+                    id: id,
+                    name: file.name,
+                    file: file,
+                    blobUrl: URL.createObjectURL(file),
+                    extractedText: "Extracting text...",
+                    type: file.type || (file.name.endsWith('.md') ? 'text/markdown' : 'unknown')
+                };
+
+                documents.push(docObj);
+                renderDocumentList();
+                
+                // Extract Text based on type
+                if (file.type === 'application/pdf') {
+                    docObj.extractedText = await extractTextFromPDF(file);
+                } else if (file.type.startsWith('text/') || file.name.endsWith('.md')) {
+                    docObj.extractedText = await file.text();
+                } else {
+                    docObj.extractedText = "Text extraction not supported for this file type.";
+                }
+                
+                // Auto-select if it's the first document
+                if (documents.length === 1) {
+                    selectDocument(id);
+                }
+            }
+            fileUpload.value = '';
+        });
+
+        // PDF Text Extraction Logic
+        async function extractTextFromPDF(file) {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+                let fullText = "";
+                const maxPages = Math.min(pdf.numPages, 50); 
+                for (let i = 1; i <= maxPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    fullText += `--- Section Page ${i} ---\n${pageText}\n\n`;
+                }
+                return fullText || "No readable text found in PDF.";
+            } catch (error) {
+                console.error("Error extracting PDF text:", error);
+                return "Failed to extract text from PDF.";
+            }
+        }
+
+        // Render PDF pages onto high-res Canvas objects
+        async function renderPDF(file) {
+            pdfViewerContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-20 text-slate-500">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+                    <p class="text-sm font-medium">Rendering PDF Pages...</p>
+                </div>
+            `;
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+                pdfViewerContainer.innerHTML = ''; // Clear spinner loader
+                
+                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                    const page = await pdf.getPage(pageNum);
+                    
+                    // Create wrapper for standard look and feel with page margins
+                    const pageWrapper = document.createElement('div');
+                    pageWrapper.className = "bg-white shadow-lg border border-slate-200 p-4 flex flex-col items-center max-w-full relative rounded-lg";
+                    
+                    const pageNumBadge = document.createElement('div');
+                    pageNumBadge.className = "absolute top-3 left-3 bg-slate-800/80 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow z-10";
+                    pageNumBadge.textContent = `Page ${pageNum}`;
+                    pageWrapper.appendChild(pageNumBadge);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.className = "max-w-full h-auto rounded";
+                    pageWrapper.appendChild(canvas);
+                    pdfViewerContainer.appendChild(pageWrapper);
+
+                    // Scale rendering resolution up slightly for high zoom readability
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    const renderContext = {
+                        canvasContext: context,
+                        viewport: viewport
+                    };
+                    await page.render(renderContext).promise;
+                }
+            } catch (error) {
+                console.error("Error rendering PDF visually:", error);
+                pdfViewerContainer.innerHTML = `
+                    <div class="p-8 text-center text-rose-500 text-sm">
+                        <i data-lucide="alert-circle" class="w-10 h-10 mx-auto mb-2 opacity-80"></i>
+                        <p class="font-bold">Failed to render PDF visually</p>
+                        <p class="text-xs text-slate-500 mt-1">${error.message}</p>
+                        <p class="text-xs text-slate-600 mt-4 bg-slate-100 p-2 rounded">Note: You can still ask the AI Academic Tutor questions about this PDF! Text context was successfully parsed.</p>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+        }
+
+        // Render Sidebar Document List
+        function renderDocumentList() {
+            if (documents.length === 0) {
+                emptyDocsMsg.style.display = 'block';
+                return;
+            }
+            emptyDocsMsg.style.display = 'none';
+            
+            // Clear list except the empty message placeholder
+            Array.from(documentList.children).forEach(child => {
+                if (child !== emptyDocsMsg) child.remove();
+            });
+
+            documents.forEach(doc => {
+                const docEl = document.createElement('div');
+                const isActive = doc.id === activeDocumentId;
+                
+                docEl.className = `p-3 rounded-xl flex items-center gap-3 cursor-pointer transition-all mb-2 border ${isActive ? 'bg-blue-50 border-primary/30 shadow-sm ring-1 ring-primary/10' : 'bg-transparent border-transparent hover:bg-slate-50 hover:border-slate-200'}`;
+                
+                let icon = 'file-text';
+                if (doc.type === 'application/pdf') icon = 'book';
+                
+                docEl.innerHTML = `
+                    <div class="${isActive ? 'text-primary' : 'text-slate-400'} shrink-0">
+                        <i data-lucide="${icon}" class="w-5 h-5"></i>
+                    </div>
+                    <div class="flex-1 overflow-hidden">
+                        <p class="text-xs font-semibold ${isActive ? 'text-slate-900' : 'text-slate-700'} truncate">${doc.name}</p>
+                        <p class="text-[10px] text-slate-400 truncate">${(doc.file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
+                `;
+                
+                docEl.addEventListener('click', () => selectDocument(doc.id));
+                documentList.appendChild(docEl);
+            });
+            lucide.createIcons();
+        }
+
+        // View Document Content
+        async function selectDocument(id) {
+            activeDocumentId = id;
+            renderDocumentList();
+            switchWorkspaceView('document');
+            
+            const doc = documents.find(d => d.id === id);
+            if (!doc) return;
+
+            viewerTitle.textContent = doc.name;
+
+            if (doc.type === 'application/pdf') {
+                pdfViewerContainer.classList.remove('hidden');
+                textViewer.classList.add('hidden');
+                await renderPDF(doc.file);
+            } else {
+                pdfViewerContainer.classList.add('hidden');
+                textViewer.classList.remove('hidden');
+                textViewer.innerHTML = marked.parse(doc.extractedText);
+            }
+        }
+
+        // View Switcher logic (Document, MindMap, Flashcards, Placeholder)
+        function switchWorkspaceView(view) {
+            currentView = view;
+            
+            // Hide all views
+            viewerPlaceholder.classList.add('hidden');
+            documentViewer.classList.add('hidden');
+            mindMapViewer.classList.add('hidden');
+            flashcardsViewer.classList.add('hidden');
+
+            if (view === 'placeholder') {
+                viewerPlaceholder.classList.remove('hidden');
+            } else if (view === 'document') {
+                documentViewer.classList.remove('hidden');
+            } else if (view === 'mindmap') {
+                mindMapViewer.classList.remove('hidden');
+            } else if (view === 'flashcards') {
+                flashcardsViewer.classList.remove('hidden');
+            }
+        }
+
+        function returnToDocumentView() {
+            if (activeDocumentId) {
+                switchWorkspaceView('document');
+            } else {
+                switchWorkspaceView('placeholder');
+            }
+        }
+
+        // Add message to chat list
+        function addMessageToUI(role, text) {
+            const wrapper = document.createElement('div');
+            wrapper.className = `flex gap-3 ${role === 'user' ? 'flex-row-reverse' : ''}`;
+            
+            const avatar = document.createElement('div');
+            avatar.className = `w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 ${role === 'user' ? 'bg-slate-200 text-slate-600' : 'bg-blue-100 text-primary'}`;
+            avatar.innerHTML = `<i data-lucide="${role === 'user' ? 'user' : 'bot'}" class="w-4 h-4"></i>`;
+            
+            const bubble = document.createElement('div');
+            bubble.className = `p-3 rounded-2xl max-w-[85%] shadow-sm text-sm prose prose-sm leading-relaxed ${
+                role === 'user' 
+                ? 'bg-primary text-white border border-primary rounded-tr-none prose-p:text-white prose-headings:text-white prose-strong:text-white prose-a:text-white' 
+                : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'
+            }`;
+            
+            if (role === 'user') {
+                bubble.textContent = text;
+            } else {
+                bubble.innerHTML = marked.parse(text);
+            }
+
+            wrapper.appendChild(avatar);
+            wrapper.appendChild(bubble);
+            chatMessages.appendChild(wrapper);
+            lucide.createIcons();
+            
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Loader helper
+        function showLoading() {
+            const wrapper = document.createElement('div');
+            wrapper.id = "loading-indicator";
+            wrapper.className = `flex gap-3`;
+            wrapper.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-1 text-primary">
+                    <i data-lucide="bot" class="w-4 h-4"></i>
+                </div>
+                <div class="bg-white border border-slate-200 p-3.5 rounded-2xl rounded-tl-none shadow-sm flex items-center h-[46px]">
+                    <div class="typing-indicator"><span></span><span></span><span></span></div>
+                </div>
+            `;
+            chatMessages.appendChild(wrapper);
+            lucide.createIcons();
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function removeLoading() {
+            const loader = document.getElementById('loading-indicator');
+            if (loader) loader.remove();
+        }
+
+        // Exponential backoff fetch helper
+        async function fetchWithRetry(url, options, maxRetries = 5) {
+            const delays = [1000, 2000, 4000, 8000, 16000];
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`HTTP ${response.status}: ${errText}`);
+                    }
+                    return await response.json();
+                } catch (e) {
+                    if (i === maxRetries - 1) throw e;
+                    console.warn(`Attempt ${i+1} failed. Retrying in ${delays[i]}ms...`);
+                    await new Promise(r => setTimeout(r, delays[i]));
+                }
+            }
+        }
+
+        // Core AI processing function
+        async function askGemini(promptText, customSystemPrompt = null) {
+            if (!apiKey) {
+                alert("Please configure a valid Gemini API Key in the top right header first.");
+                apiKeyInput.focus();
+                return null;
+            }
+
+            let documentContext = "";
+            const activeDoc = documents.find(d => d.id === activeDocumentId);
+            if (activeDoc && activeDoc.extractedText !== "Extracting text...") {
+                const limit = 45000; 
+                let textContent = activeDoc.extractedText;
+                if(textContent.length > limit) {
+                    textContent = textContent.substring(0, limit) + "\n...[Content truncated for length]...";
+                }
+                documentContext = `\n\n--- CURRENT ACTIVE STUDY MATERIAL (${activeDoc.name}) ---\n${textContent}\n--- END MATERIAL ---\n\n`;
+            }
+
+            const defaultSystemPrompt = "You are a warm, supportive, and highly clear Academic Tutor and Study Assistant. When answering questions from the document, you MUST refer to specific sections or pages (e.g. 'See Page 3', 'In section X') to help students verify information. Format explanations clearly with markdown lists, headings, and bold key concepts.";
+            
+            const systemPrompt = customSystemPrompt || defaultSystemPrompt;
+
+            const apiContents = chatHistory.map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.text }]
+            }));
+
+            apiContents.push({
+                role: 'user',
+                parts: [{ text: documentContext + promptText }]
+            });
+
+            const model = "gemini-2.5-flash";
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+            const options = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: apiContents,
+                    systemInstruction: { parts: [{ text: systemPrompt }] }
+                })
+            };
+
+            const result = await fetchWithRetry(url, options);
+            return result.candidates?.[0]?.content?.parts?.[0]?.text;
+        }
+
+        // Chat Form Submission
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text) return;
+
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            addMessageToUI('user', text);
+            showLoading();
+            sendBtn.disabled = true;
+
+            try {
+                const replyText = await askGemini(text);
+                removeLoading();
+                if (replyText) {
+                    addMessageToUI('model', replyText);
+                    chatHistory.push({ role: 'user', text: text });
+                    chatHistory.push({ role: 'model', text: replyText });
+                }
+            } catch (error) {
+                removeLoading();
+                console.error("API Error:", error);
+                addMessageToUI('model', `**Error:** I was unable to complete that request.\n\n\`${error.message}\``);
+            } finally {
+                sendBtn.disabled = false;
+            }
+        });
+
+        // Trigger Standard Study Action Buttons
+        async function triggerStudyAction(actionType) {
+            if (!activeDocumentId) {
+                alert("Please select or upload a document to analyze first.");
+                return;
+            }
+            
+            let query = "";
+            switch (actionType) {
+                case 'Summarize Notes':
+                    query = "Please provide an executive, high-level summary of this material. Group by core chapters or pages.";
+                    break;
+                case 'Key Concepts':
+                    query = "Highlight the top 5 key concepts or definitions from this document. Explain each briefly, pointing to the section/page where they appear.";
+                    break;
+                case 'Explain Simply':
+                    query = "Explain the central concepts of this document simply as if I am 12 years old, using a clear everyday analogy.";
+                    break;
+                case 'Practice Questions':
+                    query = "Generate 3 practice essay/short-answer questions based on the uploaded document. Include brief, structured hint answers hidden behind page references.";
+                    break;
+                case 'Study Plan':
+                    query = "Generate a structured, logical 7-day study schedule specifically tailored to master this uploaded content efficiently.";
+                    break;
+                case 'Exam Preparation Tips':
+                    query = "Analyze this material and provide the top study strategies, typical exam focus areas, and memory advice for these specific topics.";
+                    break;
+            }
+
+            addMessageToUI('user', `${actionType}`);
+            showLoading();
+            
+            try {
+                const reply = await askGemini(query);
+                removeLoading();
+                if (reply) {
+                    addMessageToUI('model', reply);
+                    chatHistory.push({ role: 'user', text: actionType });
+                    chatHistory.push({ role: 'model', text: reply });
+                }
+            } catch (error) {
+                removeLoading();
+                addMessageToUI('model', `**Error:** Study tool failed.\n\n\`${error.message}\``);
+            }
+        }
+
+        // Dynamic Interactive Quiz Tool
+        async function triggerQuizAction() {
+            if (!activeDocumentId) {
+                alert("Please select or upload a document first.");
+                return;
+            }
+
+            addMessageToUI('user', "Generate a Multiple Choice Quiz");
+            showLoading();
+
+            const quizPrompt = "Create a 3-question multiple choice quiz testing key terms from the active document. Include options (A, B, C, D) and hide the correct answers at the very bottom with page references so I don't see them immediately.";
+
+            try {
+                const reply = await askGemini(quizPrompt);
+                removeLoading();
+                if (reply) {
+                    addMessageToUI('model', reply);
+                    chatHistory.push({ role: 'user', text: "Generate Quiz" });
+                    chatHistory.push({ role: 'model', text: reply });
+                }
+            } catch (e) {
+                removeLoading();
+                addMessageToUI('model', `**Quiz Error:** Failed to generate quiz. \`${e.message}\``);
+            }
+        }
+
+        // Create Flashcards Action
+        async function triggerFlashcardAction() {
+            if (!activeDocumentId) {
+                alert("Please select or upload a document first.");
+                return;
+            }
+
+            addMessageToUI('user', "Generate Flashcards from this material");
+            showLoading();
+
+            const flashcardPrompt = "Analyze the active document and construct exactly 5 flashcards of important terms. You must strictly respond in a JSON format matching this schema: {\"flashcards\": [{\"q\": \"question or term\", \"a\": \"concise definition or explanation\"}]}. Return ONLY this valid JSON block and nothing else.";
+
+            try {
+                const rawJson = await askGemini(flashcardPrompt, "You are a JSON generator helper. You must output raw JSON structures.");
+                removeLoading();
+                
+                if (rawJson) {
+                    // Try to extract JSON matching block in case of markdown decoration wrappers
+                    const cleanJsonStr = rawJson.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const parsedData = JSON.parse(cleanJsonStr);
+                    
+                    if (parsedData && parsedData.flashcards && parsedData.flashcards.length > 0) {
+                        currentFlashcards = parsedData.flashcards;
+                        currentCardIndex = 0;
+                        switchWorkspaceView('flashcards');
+                        showCard(0);
+                        addMessageToUI('model', "I have successfully compiled **5 custom interactive study flashcards** for you in the center viewer panel! Click the cards to flip them.");
+                    } else {
+                        throw new Error("Invalid structure returned");
+                    }
+                }
+            } catch (error) {
+                removeLoading();
+                console.error("Flashcard generation error:", error);
+                addMessageToUI('model', `**Flashcards Error:** I couldn't format the flashcard data successfully. Please ensure you have a valid API Key and try again.\n\n\`${error.message}\``);
+            }
+        }
+
+        function showCard(index) {
+            if (currentFlashcards.length === 0) return;
+            
+            // Reset rotation state first
+            flashcardCard.classList.remove('flashcard-flipped');
+            
+            setTimeout(() => {
+                const card = currentFlashcards[index];
+                cardQuestionText.textContent = card.q;
+                cardAnswerText.textContent = card.a;
+                cardProgress.textContent = `${index + 1} / ${currentFlashcards.length}`;
+                
+                prevCardBtn.disabled = index === 0;
+                nextCardBtn.disabled = index === currentFlashcards.length - 1;
+            }, 150);
+        }
+
+        // Interactive Mind Map Generation Action
+        async function triggerMindMapAction() {
+            if (!activeDocumentId) {
+                alert("Please select or upload a document first.");
+                return;
+            }
+
+            addMessageToUI('user', "Generate a Mind Map");
+            showLoading();
+
+            const mindMapPrompt = "Analyze this study material and create a structured map hierarchy representing the topic tree. Return exactly in this valid JSON schema: {\"topic\": \"Main Subject\", \"branches\": [{\"title\": \"Subtopic A\", \"nodes\": [\"Concept A1\", \"Concept A2\"]}, {\"title\": \"Subtopic B\", \"nodes\": [\"Concept B1\", \"Concept B2\"]}]}. Return ONLY this JSON structure and absolutely nothing else.";
+
+            try {
+                const rawJson = await askGemini(mindMapPrompt, "You are a specialized JSON tree generator. You strictly output valid JSON maps.");
+                removeLoading();
+
+                if (rawJson) {
+                    const cleanJsonStr = rawJson.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const parsedMap = JSON.parse(cleanJsonStr);
+                    
+                    if (parsedMap && parsedMap.topic) {
+                        renderInteractiveMindMap(parsedMap);
+                        switchWorkspaceView('mindmap');
+                        addMessageToUI('model', "I have dynamically mapped out the central topics of this document into an **interactive visual Mind Map**! You can explore the visual layout in the center pane.");
+                    } else {
+                        throw new Error("Invalid schema");
+                    }
+                }
+            } catch (error) {
+                removeLoading();
+                console.error("Mind map generation error:", error);
+                addMessageToUI('model', `**Mind Map Error:** Failed to format mind map node data successfully.\n\n\`${error.message}\``);
+            }
+        }
+
+        // Render Dynamic Tree Structures
+        function renderInteractiveMindMap(data) {
+            const container = document.getElementById('mindmap-tree');
+            container.innerHTML = ""; // Clear loader
+
+            // Create Main Node
+            const mainNode = document.createElement('div');
+            mainNode.className = "px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-xl font-bold shadow-lg text-lg text-white border-2 border-cyan-400 cursor-pointer transform hover:scale-105 transition-all text-center";
+            mainNode.textContent = data.topic;
+            container.appendChild(mainNode);
+
+            // Connective Line
+            const line = document.createElement('div');
+            line.className = "w-0.5 h-8 bg-cyan-500/50";
+            container.appendChild(line);
+
+            // Branch Wrapper
+            const branchesWrapper = document.createElement('div');
+            branchesWrapper.className = "flex justify-center items-start gap-8 w-full flex-wrap";
+
+            data.branches.forEach((branch, idx) => {
+                const branchCol = document.createElement('div');
+                branchCol.className = "flex flex-col items-center flex-1 min-w-[200px] border-t border-cyan-500/30 pt-4 relative";
+
+                // Branch Title
+                const branchTitle = document.createElement('div');
+                branchTitle.className = "px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-cyan-300 font-semibold border border-cyan-500/40 text-sm mb-4 cursor-pointer text-center w-full shadow";
+                branchTitle.textContent = branch.title;
+                branchCol.appendChild(branchTitle);
+
+                // Nodes of Branch
+                const nodesList = document.createElement('div');
+                nodesList.className = "space-y-2 w-full";
+
+                branch.nodes.forEach(nodeText => {
+                    const nodeCard = document.createElement('div');
+                    nodeCard.className = "p-2.5 bg-slate-850 hover:bg-slate-800 border border-slate-700/50 rounded-md text-xs text-slate-300 hover:text-white hover:border-cyan-400/50 transition-colors cursor-pointer text-center shadow-inner";
+                    nodeCard.textContent = nodeText;
+                    
+                    // Click Node to ask assistant about it
+                    nodeCard.addEventListener('click', () => {
+                        chatInput.value = `Can you explain the concept "${nodeText}" in relation to "${branch.title}"?`;
+                        chatInput.focus();
+                    });
+
+                    nodesList.appendChild(nodeCard);
+                });
+
+                branchCol.appendChild(nodesList);
+                branchesWrapper.appendChild(branchCol);
+            });
+
+            container.appendChild(branchesWrapper);
+        }
+
+    </script>
+</body>
+</html>
